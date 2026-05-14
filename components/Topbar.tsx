@@ -1,20 +1,28 @@
 'use client';
 import { Search, Bell, Flag, Archive } from 'lucide-react';
-import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 
-export default function Topbar() {
-  const [query, setQuery] = useState('');
+interface TopbarProps {
+  brand?: string;
+  query?: string;
+  onQueryChange?: (value: string) => void;
+}
+
+export default function Topbar({ brand = 'Jwala Lakshmi Jewellers', query = '', onQueryChange }: TopbarProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+
   return (
     <header className="topbar">
       <div className="topbar-brand">
-        <span className="topbar-logo">Aurelia Designs</span>
+        <span className="topbar-logo">{brand}</span>
       </div>
       <div className="search-bar">
         <Search size={15} />
         <input
           value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search the collective..."
+          onChange={e => onQueryChange?.(e.target.value)}
+          placeholder="Search designs, vendors..."
         />
       </div>
       <div className="topbar-actions">
@@ -25,7 +33,12 @@ export default function Topbar() {
         <button className="icon-btn" id="flag-btn" aria-label="Reports">
           <Flag size={16} />
         </button>
-        <button className="icon-btn" id="vault-btn" aria-label="Vault">
+        <button
+          className={`icon-btn${pathname === '/requests' ? ' active' : ''}`}
+          id="requests-btn"
+          aria-label="Requests"
+          onClick={() => router.push('/requests')}
+        >
           <Archive size={16} />
         </button>
       </div>

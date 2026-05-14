@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'JewelBridge — Elite B2B Collective',
-  description: 'The premier B2B wholesale marketplace for luxury jewellery and timepieces.',
+  title: 'Jwala Lakshmi Jewellers',
+  description: 'A private jewellery vendor marketplace for real designs, requests, and admin operations.',
 };
 
 export const viewport: Viewport = {

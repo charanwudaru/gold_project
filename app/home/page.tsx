@@ -1,10 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Diamond, Clock, Link2, Circle, Star, SlidersHorizontal } from 'lucide-react';
 import BottomNav from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import ProductCard from '@/components/ProductCard';
-import FilterModal from '@/components/FilterModal';
+import FilterModal, { emptyFilters, type ProductFilters } from '@/components/FilterModal';
+import { apiFetch, clearSession, type Product, type User } from '@/app/lib/api';
+import { useRouter } from 'next/navigation';
 
 const categories = [
   { label: 'All Collections', icon: Diamond },
@@ -14,77 +16,73 @@ const categories = [
   { label: 'Bracelets', icon: Star },
 ];
 
-const products = [
-  {
-    id: 1,
-    image: 'https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=600&q=80',
-    status: 'available' as const,
-    title: 'Round Brilliant Solitaire Ring',
-    spec: '2.4ct · VS1 · F Color',
-    views: '1.2K',
-    category: 'Rings',
-  },
-  {
-    id: 2,
-    image: 'https://images.unsplash.com/photo-1587836374828-4dbafa94cf0e?w=600&q=80',
-    status: 'reserved' as const,
-    title: 'Skeleton Dial Chronograph',
-    spec: '42mm · Rose Gold · 148g',
-    views: '845',
-    category: 'Timepieces',
-  },
-  {
-    id: 3,
-    image: 'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=600&q=80',
-    status: 'available' as const,
-    title: '10mm Solid Cuban Link Chain',
-    spec: '18k Solid · 240g · 10mm',
-    views: '2.1K',
-    category: 'Chains',
-  },
-  {
-    id: 4,
-    image: 'https://images.unsplash.com/photo-1573408301185-9519f94816b5?w=600&q=80',
-    status: 'available' as const,
-    title: 'Diamond Pavé Eternity Band',
-    spec: '1.8ct · White Gold · 4.2g',
-    views: '978',
-    category: 'Rings',
-  },
-  {
-    id: 5,
-    image: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&q=80',
-    status: 'available' as const,
-    title: 'Open Heart Tourbillon Watch',
-    spec: '38mm · Platinum · 210g',
-    views: '3.4K',
-    category: 'Timepieces',
-  },
-  {
-    id: 6,
-    image: 'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=600&q=80',
-    status: 'reserved' as const,
-    title: 'Diamond Tennis Bracelet',
-    spec: '5.0ct · E/VVS2 · 7.4g',
-    views: '1.7K',
-    category: 'Bracelets',
-  },
-];
+function numberInRange(spec: string, unitPattern: RegExp, min: string, max: string) {
+  if (!min && !max) return true;
+  const match = spec.match(unitPattern);
+  if (!match) return false;
+  const value = Number(match[1]);
+  if (min && value < Number(min)) return false;
+  if (max && value > Number(max)) return false;
+  return true;
+}
 
 export default function HomePage() {
+  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState('All Collections');
   const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<ProductFilters>(emptyFilters);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const filtered = activeCategory === 'All Collections'
-    ? products
-    : products.filter(p => p.category === activeCategory);
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      apiFetch<Product[]>('/products'),
+      apiFetch<User>('/auth/me'),
+    ])
+      .then(([items, user]) => {
+        if (!mounted) return;
+        setProducts(items);
+        setCurrentUser(user);
+      })
+      .catch(err => {
+        if (!mounted) return;
+        const message = err instanceof Error ? err.message : 'Could not load marketplace.';
+        setError(message);
+        if (/credential|token|unauthorized/i.test(message)) {
+          clearSession();
+          router.push('/login');
+        }
+      })
+      .finally(() => mounted && setLoading(false));
+
+    return () => { mounted = false; };
+  }, [router]);
+
+  const filtered = useMemo(() => {
+    return products.filter(product => {
+      if (product.status === 'hidden') return false;
+      if (currentUser?.role === 'vendor' && product.owner_id === currentUser.id) return false;
+      const haystack = `${product.title} ${product.spec} ${product.category} ${product.design_id}`.toLowerCase();
+      if (query && !haystack.includes(query.toLowerCase())) return false;
+      if (activeCategory !== 'All Collections' && product.category !== activeCategory) return false;
+      if (filters.statuses.length && !filters.statuses.includes(product.status)) return false;
+      if (filters.metals.length && !filters.metals.some(metal => haystack.includes(metal.toLowerCase()))) return false;
+      if (filters.stones.length && !filters.stones.some(stone => stone === 'None' ? !/diamond|sapphire|ruby|emerald/i.test(product.spec) : haystack.includes(stone.toLowerCase()))) return false;
+      if (!numberInRange(product.spec, /([\d.]+)\s*ct/i, filters.minCarat, filters.maxCarat)) return false;
+      if (!numberInRange(product.spec, /([\d.]+)\s*g/i, filters.minWeight, filters.maxWeight)) return false;
+      return true;
+    });
+  }, [activeCategory, currentUser, filters, products, query]);
 
   return (
     <div className="app-shell">
       <div className="main-area">
-        <Topbar />
+        <Topbar brand={currentUser?.business_name} query={query} onQueryChange={setQuery} />
         <main className="page-content">
-          {/* Category Tabs & Filters */}
           <div className="category-tabs-wrap">
             <div className="category-tabs">
               {categories.map(({ label, icon: Icon }) => (
@@ -105,17 +103,31 @@ export default function HomePage() {
             </button>
           </div>
 
-          {/* Product Grid */}
+          {loading && <p style={{ color: 'var(--text-secondary)' }}>Loading real listings...</p>}
+          {error && <p style={{ color: '#ef4444' }}>{error}</p>}
+          {!loading && !error && filtered.length === 0 && (
+            <p style={{ color: 'var(--text-secondary)' }}>No designs from other vendors match the selected options.</p>
+          )}
+
           <div className="product-grid">
-            {filtered.map(p => (
-              <ProductCard key={p.id} {...p} />
+            {filtered.map((product, index) => (
+              <ProductCard
+                key={product.id}
+                id={product.id}
+                image={product.image_url}
+                imageUrls={product.image_urls}
+                status={product.status}
+                title={product.title}
+                spec={product.spec}
+                views={`${index + 1}`}
+              />
             ))}
           </div>
         </main>
       </div>
       <BottomNav />
 
-      {filterOpen && <FilterModal onClose={() => setFilterOpen(false)} />}
+      {filterOpen && <FilterModal filters={filters} onApply={setFilters} onClose={() => setFilterOpen(false)} />}
     </div>
   );
 }
